@@ -2,31 +2,65 @@
 // Require the needed packages
 var gulp       = require('gulp'),
     gutil      = require('gulp-util'),
+    coffee     = require('gulp-coffee'),
     clean      = require('gulp-clean'),
     stylus     = require('gulp-stylus'),
     browserify = require('gulp-browserify'),
     rename     = require('gulp-rename'),
-    livereload = require('gulp-livereload');
+    path       = require("path"),
+    livereload = null;
+
+if (process.env.ENVIRONMENT != "PRODUCTION") {
+  livereload = require('gulp-livereload');
+}
+
+var baseAppPath     = path.join(__dirname, 'app'),
+    baseDistPath    = path.join(__dirname, 'dist'),
+    basePluginsPath = path.join(baseDistPath, 'plugins', 'custom'),
+    baseStaticPath  = path.join(baseDistPath, 'static'),
+    baseJsPath      = path.join(baseAppPath, 'js'),
+    baseCssPath     = path.join(baseAppPath, 'css'),
+    baseModulesPath = path.join(__dirname, 'node_modules');
 
 var paths = {
-  cssPath: ['./app/css/**/*.styl*'],
-  cssInput: './app/css/main.styl',
-  cssOutput: './.generated/css',
-  coffeePath: ['./app/js/**/*.coffee'],
-  coffeeInput: './app/js/main.coffee',
-  coffeeOutput: './.generated/js',
-  assetsBasePath: './app',
+  libInput: path.join(__dirname, 'lib', '**', '*.coffee'),
+  libOutput: basePluginsPath,
+
+  modulesInput: path.join(baseModulesPath, '**', '*'),
+  modulesOutput: path.join(baseDistPath, 'modules'),
+  cssPath: [path.join(baseCssPath, '**', '*.styl*')],
+  cssInput: path.join(baseCssPath, 'main.styl'),
+  cssOutput: path.join(baseStaticPath, 'css'),
+  coffeePath: [path.join(baseJsPath, '**', '*.coffee')],
+  coffeeInput: path.join(baseJsPath, 'main.coffee'),
+  coffeeOutput: path.join(baseStaticPath, 'js'),
+  ejsPath:  path.join(baseAppPath, '**', '*.ejs'),
+  assetsBasePath: baseAppPath,
   assetsPaths: [
-    './app/img/**/*',
-    './app/fonts/**/*',
-    './app/**/*.html'
+    path.join(baseAppPath, 'img', '**', '*'),
+    path.join(baseAppPath, 'fonts', '**', '*'),
+    path.join(baseAppPath, '**', '*.html')
   ],
-  assetsOutput: './.generated/'
+  assetsOutput: baseStaticPath
 };
 
+var testFiles = [
+  path.join(baseStaticPath, 'js', 'app.js'),
+  path.join(__dirname, 'test', 'client', '*.js')
+];
 
-gulp.task('default', function () {
-  console.log("default task does nothing, hombre.")
+
+gulp.task('test', function() {
+  // Be sure to return the stream
+  return gulp.src(testFiles)
+    .pipe(karma({
+      configFile: 'karma.conf.js',
+      action: 'run'
+    }))
+    .on('error', function(err) {
+      // Make sure failed tests cause gulp to exit non-zero
+      throw err;
+    });
 });
 
 
@@ -34,7 +68,8 @@ gulp.task('default', function () {
 // Stylus
 //
 
-gulp.task('stylus', function () {
+// Get and render all .styl files recursively
+gulp.task('stylus', function() {
   gulp.src(paths.cssInput)
     .pipe(stylus()
       .on('error', gutil.log)
@@ -48,8 +83,22 @@ gulp.task('stylus', function () {
 //
 
 gulp.task('coffee', function() {
+  gulp.src(paths.libInput)
+    .pipe(coffee({bare: true})
+      .on('error', gutil.log)
+      .on('error', gutil.beep))
+    .pipe(gulp.dest(paths.libOutput))
+});
+
+
+//
+// Browserify Coffee
+//
+
+gulp.task('browserify', function() {
   gulp.src(paths.coffeeInput, { read: false })
     .pipe(browserify({
+      basedir: __dirname,
       transform: ['coffeeify'],
       extensions: ['.coffee']
     })
@@ -58,7 +107,7 @@ gulp.task('coffee', function() {
     .pipe(rename('main.js'))
     .pipe(gulp.dest(paths.coffeeOutput))
 
-  gulp.src('./app/js/app.coffee', { read: false })
+  gulp.src(path.join(__dirname, 'app', 'js', 'app.coffee'), { read: false })
     .pipe(browserify({
       transform: ['coffeeify'],
       extensions: ['.coffee']
@@ -79,29 +128,61 @@ gulp.task('assets', function() {
     .pipe(gulp.dest(paths.assetsOutput));
 });
 
+//
+// modules
+//
+
+gulp.task('modules', function() {
+  gulp.src(paths.modulesInput, {base: baseModulesPath})
+    .on('error', gutil.log)
+    .on('error', gutil.beep)
+    .pipe(gulp.dest(paths.modulesOutput));
+});
+
+
+//
+// EJS
+//
+
+gulp.task('ejs', function() {
+  gulp.src(paths.ejsPath)
+    .pipe(ejs()
+      .on('error', gutil.log)
+      .on('error', gutil.beep))
+    .pipe(gulp.dest(paths.assetsOutput));
+});
+
 
 //
 // Clean
 //
 
 gulp.task('clean', function() {
-  gulp.src('./.generated/**/*', {read: false})
+  gulp.src(path.join(baseDistPath, '**', '*'), {read: false})
     .pipe(clean());
 });
 
 
 //
-// Watch
+// Build
 //
 
-gulp.task('watch', ['clean','stylus','coffee','assets'], function() {
-  var server = livereload();
+gulp.task('build', ['stylus','coffee','modules','browserify','assets']);
+
+
+//
+// Watch
+//
+gulp.task('watch', ['clean','stylus','browserify','coffee','assets'], function() {
   gulp.watch(paths.cssPath, ['stylus']);
   gulp.watch(paths.coffeePath, ['coffee']);
   gulp.watch(paths.assetsPaths, ['assets']);
-  gulp.watch('.generated/**').on('change', function(file) {
-    server.changed(file.path);
-  });
+  if (livereload) {
+    var server = livereload();
+    gulp.watch(path.join(baseStaticPath, '**')).on('change', function(file) {
+      server.changed(file.path);
+    });
+  }
 });
 
-gulp.task('default', ['stylus', 'coffee', 'assets']);
+gulp.task('default', ['build']);

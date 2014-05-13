@@ -1,0 +1,82 @@
+#!/usr/bin/env zsh
+
+export MCPLUGINS_DIR=$HOME/git/minecraft-plugins
+export DIST_DIR=$MCPLUGINS_DIR/dist
+
+export DEV_SERVER_DIR=$HOME/git/minecraft-server
+export DEV_SERVER_PLUGINS_DIR=$DEV_SERVER_DIR/plugins/jsc
+
+export PRODUCTION_SERVER_DIR=""
+export PRODUCTION_SERVER_PLUGINS_DIR=""
+
+black='\e[00;30m'
+dark_gray='\e[01;30m'
+blue='\e[00;34m'
+light_blue='\e[01;34m'
+green='\e[00;32m'
+light_green='\e[01;32m'
+cyan='\e[00;36m'
+light_cyan='\e[01;36m'
+red='\e[00;31m'
+light_red='\e[01;31m'
+purple='\e[00;35m'
+light_purple='\e[01;35m'
+brown='\e[00;33m'
+yellow='\e[01;33m'
+light_gray='\e[00;37m'
+white='\e[01;37m'
+reset='\e[00m'
+
+function header {
+  echo -e "\n${reset}[${cyan}deploy${reset}]"
+}
+
+function line {
+  echo -e "${dark_gray}=>${reset} $*\n";
+}
+
+
+if [[ $# -eq 0 ]] ; then
+  header;
+  line "Please specify the server you wish to deploy to (${dark_gray}dev${reset}|${dark_gray}production${reset})";
+  exit 0;
+fi
+
+function build {
+  gulp clean;
+  gulp;
+}
+
+function deploy {
+
+  case "$1" in
+    development)
+      build;
+      mkdir -p $DEV_SERVER_PLUGINS_DIR
+      rsync -avzh $DIST_DIR/* $DEV_SERVER_PLUGINS_DIR/
+      ;;
+    production)
+      echo "PRO"
+      build;
+      ;;
+    *)
+      break;
+  esac
+
+}
+
+case "$1" in
+  d|dev|development)
+    header;
+    line 'deploying to development';
+    deploy development
+    ;;
+  p|pro|production)
+    header;
+    line 'deploying to production';
+    deploy production
+    ;;
+  *) echo
+    header;
+    line "${red}[error] I don't understand the argument: ${light_gray}$1" ;;
+esac
